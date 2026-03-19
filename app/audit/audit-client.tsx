@@ -26,7 +26,7 @@ type NavStep = "Audit" | "Enter Key" | "Review" | "Apply"
 
 const NAV_STEPS: NavStep[] = ["Audit", "Enter Key", "Review", "Apply"]
 
-function getNavState(step: Step): { active: NavStep; completed: Set<NavStep> } {
+export function getNavState(step: Step): { active: NavStep; completed: Set<NavStep> } {
   switch (step) {
     case "audit":
       return { active: "Audit", completed: new Set() }
