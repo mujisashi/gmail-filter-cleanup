@@ -2,7 +2,10 @@
 # dev-test.sh — Start dev server, open browser to log in, then QA with cookies
 set -e
 
-B="$(git rev-parse --show-toplevel)/.claude/skills/gstack/browse/dist/browse"
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+B="$ROOT/.claude/skills/gstack/browse/dist/browse"
 PORT=3000
 URL="http://localhost:$PORT"
 
