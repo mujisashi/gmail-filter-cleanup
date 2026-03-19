@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
+    "geist": "^1.7.0",
     "googleapis": "^143.0.0",
     "jose": "^5.9.0",
     "next": "^15.0.0",
