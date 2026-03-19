@@ -20,6 +20,28 @@ type Step =
   | "applying"
   | "done"
 
+// Maps the 6 internal steps to 4 nav steps
+// consolidating shows inside "Enter Key", applying shows inside "Apply"
+type NavStep = "Audit" | "Enter Key" | "Review" | "Apply"
+
+const NAV_STEPS: NavStep[] = ["Audit", "Enter Key", "Review", "Apply"]
+
+export function getNavState(step: Step): { active: NavStep; completed: Set<NavStep> } {
+  switch (step) {
+    case "audit":
+      return { active: "Audit", completed: new Set() }
+    case "enter-key":
+    case "consolidating":
+      return { active: "Enter Key", completed: new Set(["Audit"]) }
+    case "review":
+      return { active: "Review", completed: new Set(["Audit", "Enter Key"]) }
+    case "applying":
+      return { active: "Apply", completed: new Set(["Audit", "Enter Key", "Review"]) }
+    case "done":
+      return { active: "Apply", completed: new Set(["Audit", "Enter Key", "Review", "Apply"]) }
+  }
+}
+
 export function AuditClient({ auditResult }: { auditResult: AuditResult }) {
   const [step, setStep] = useState<Step>("audit")
   const [apiKey, setApiKey] = useState("")
@@ -90,19 +112,54 @@ export function AuditClient({ auditResult }: { auditResult: AuditResult }) {
     }
   }
 
+  const { active, completed } = getNavState(step)
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-        <span className="font-semibold text-gray-900">Gmail Filter Cleanup</span>
-        <button
-          onClick={() => signOut({ callbackUrl: "/" })}
-          className="text-sm text-gray-500 hover:text-gray-700"
-        >
-          Sign out
-        </button>
+    <div className="min-h-screen bg-gray-950">
+      <nav className="bg-gray-900 border-b border-gray-800 px-4 py-3">
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
+          <span className="font-semibold text-gray-100">Gmail Filter Cleanup</span>
+          <button
+            onClick={() => signOut({ callbackUrl: "/" })}
+            className="text-sm text-gray-400 hover:text-gray-200 transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
+        <div className="max-w-2xl mx-auto mt-3 flex items-center gap-4">
+          {NAV_STEPS.map((navStep, i) => {
+            const isDone = completed.has(navStep)
+            const isActive = active === navStep && !isDone
+            return (
+              <div key={navStep} className="flex items-center gap-1.5">
+                {i > 0 && <span className="text-gray-700 text-xs">—</span>}
+                <span
+                  className={`w-2 h-2 rounded-full transition-colors duration-100 ${
+                    isDone
+                      ? "bg-blue-500"
+                      : isActive
+                      ? "bg-gray-100"
+                      : "bg-gray-600"
+                  }`}
+                />
+                <span
+                  className={`text-[13px] transition-colors duration-100 ${
+                    isActive
+                      ? "text-gray-100 font-medium"
+                      : isDone
+                      ? "text-gray-400"
+                      : "text-gray-600"
+                  }`}
+                >
+                  {navStep}
+                </span>
+              </div>
+            )
+          })}
+        </div>
       </nav>
 
-      <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+      <main className="max-w-2xl mx-auto px-4 py-8 space-y-6">
         {step === "audit" && (
           <AuditView
             auditResult={auditResult}
@@ -174,15 +231,15 @@ function AuditView({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Filter Audit</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h1 className="text-xl font-semibold text-gray-100">Filter Audit</h1>
+          <p className="text-sm text-gray-400 mt-0.5">
             {stats.total} filter{stats.total !== 1 ? "s" : ""} found
           </p>
         </div>
         <button
           onClick={onConsolidate}
           disabled={stats.total === 0}
-          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
         >
           Consolidate with AI →
         </button>
@@ -192,19 +249,19 @@ function AuditView({
         <div className="flex gap-3">
           {stats.deadLabels > 0 && (
             <Badge variant="red">
-              {stats.deadLabels} dead label{stats.deadLabels !== 1 ? "s" : ""}
+              ⚠ {stats.deadLabels} dead label{stats.deadLabels !== 1 ? "s" : ""}
             </Badge>
           )}
           {stats.duplicates > 0 && (
             <Badge variant="yellow">
-              {stats.duplicates} duplicate{stats.duplicates !== 1 ? "s" : ""}
+              = {stats.duplicates} duplicate{stats.duplicates !== 1 ? "s" : ""}
             </Badge>
           )}
         </div>
       )}
 
       {stats.total === 0 ? (
-        <EmptyState message="No filters found in your Gmail account." />
+        <EmptyState message="You have no Gmail filters yet — looks like you're all set." />
       ) : (
         <div className="space-y-4">
           {Object.entries(groupedByAction).map(([actionType, groupFilters]) => (
@@ -239,22 +296,22 @@ function FilterGroup({
   const [expanded, setExpanded] = useState(true)
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div className="bg-gray-800 border border-gray-700 rounded-lg overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-700/50 transition-colors"
       >
-        <span className="font-medium text-sm">
+        <span className="font-medium text-sm text-gray-100">
           {labelForActionType(actionType, labels)}
         </span>
-        <span className="text-sm text-gray-500">
+        <span className="text-sm text-gray-400">
           {filters.length} filter{filters.length !== 1 ? "s" : ""}{" "}
           {expanded ? "▲" : "▼"}
         </span>
       </button>
 
       {expanded && (
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-gray-700">
           {filters.map((f) => (
             <FilterRow
               key={f.id}
@@ -283,14 +340,14 @@ function FilterRow({
 }) {
   return (
     <div className="px-4 py-2.5 flex items-start justify-between gap-3">
-      <div className="text-sm text-gray-700 flex-1 min-w-0">
-        <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">
+      <div className="text-sm text-gray-300 flex-1 min-w-0">
+        <span className="font-mono text-[11px] bg-gray-700 text-gray-200 px-1.5 py-0.5 rounded">
           {describeCriteria(filter.criteria)}
         </span>
       </div>
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        {isDead && <Badge variant="red">dead label</Badge>}
-        {isDupe && <Badge variant="yellow">duplicate</Badge>}
+        {isDead && <Badge variant="red">⚠ dead label</Badge>}
+        {isDupe && <Badge variant="yellow">= duplicate</Badge>}
       </div>
     </div>
   )
@@ -309,11 +366,18 @@ function KeyEntry({
   onBack: () => void
   error: string | null
 }) {
+  const isAuthError = error && (
+    error.toLowerCase().includes("api key") ||
+    error.toLowerCase().includes("auth") ||
+    error.toLowerCase().includes("invalid") ||
+    error.toLowerCase().includes("unauthorized")
+  )
+
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4 max-w-md mx-auto">
+    <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 space-y-4 max-w-md mx-auto">
       <div>
-        <h2 className="font-semibold text-gray-900">Enter your Anthropic API key</h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <h2 className="font-semibold text-gray-100">Enter your Anthropic API key</h2>
+        <p className="text-sm text-gray-400 mt-1">
           Your key is sent directly to the Claude API and is never stored on our
           servers.
         </p>
@@ -325,23 +389,41 @@ function KeyEntry({
           value={apiKey}
           onChange={(e) => onChange(e.target.value)}
           placeholder="sk-ant-..."
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+          aria-label="Anthropic API key"
+          className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-md text-sm font-mono text-gray-100 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           onKeyDown={(e) => e.key === "Enter" && apiKey.trim() && onSubmit()}
         />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && (
+          <div className="space-y-1">
+            <p className="text-sm text-red-400">{error}</p>
+            {isAuthError && (
+              <p className="text-xs text-gray-500">
+                Get your API key at{" "}
+                <a
+                  href="https://console.anthropic.com/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300"
+                >
+                  console.anthropic.com/keys
+                </a>
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex gap-2">
         <button
           onClick={onBack}
-          className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg"
+          className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 border border-gray-600 rounded-lg transition-colors"
         >
           Back
         </button>
         <button
           onClick={onSubmit}
           disabled={!apiKey.trim()}
-          className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
         >
           Analyze filters →
         </button>
@@ -373,11 +455,11 @@ function ReviewView({
   if (result.proposals.length === 0) {
     return (
       <div className="text-center py-12 space-y-3">
-        <p className="text-gray-600 font-medium">No consolidations needed</p>
-        <p className="text-sm text-gray-500">
+        <p className="text-gray-100 font-medium">No consolidations needed</p>
+        <p className="text-sm text-gray-400">
           Your filters are already clean — no redundancies found.
         </p>
-        <button onClick={onBack} className="text-sm text-blue-600 underline">
+        <button onClick={onBack} className="text-sm text-blue-400 hover:text-blue-300">
           Back to audit
         </button>
       </div>
@@ -388,8 +470,8 @@ function ReviewView({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold">Review Proposals</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h2 className="text-xl font-semibold text-gray-100">Review Proposals</h2>
+          <p className="text-sm text-gray-400 mt-0.5">
             {result.proposals.length} consolidation
             {result.proposals.length !== 1 ? "s" : ""} proposed
           </p>
@@ -397,14 +479,14 @@ function ReviewView({
         <div className="flex gap-2">
           <button
             onClick={onBack}
-            className="px-3 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+            className="px-3 py-2 text-sm text-gray-400 border border-gray-600 rounded-lg hover:bg-gray-700/50 transition-colors"
           >
             Back
           </button>
           <button
             onClick={onApply}
             disabled={approvedCount === 0}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
           >
             Apply {approvedCount} change{approvedCount !== 1 ? "s" : ""} →
           </button>
@@ -412,7 +494,7 @@ function ReviewView({
       </div>
 
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+        <div className="p-3 bg-red-950/60 border border-red-800 rounded-lg text-sm text-red-400">
           {error}
         </div>
       )}
@@ -448,16 +530,16 @@ function ProposalCard({
   approved: boolean
   onToggle: () => void
 }) {
-  const confidenceColor = {
-    high: "text-green-700 bg-green-50",
-    medium: "text-yellow-700 bg-yellow-50",
-    low: "text-orange-700 bg-orange-50",
+  const confidenceBadge = {
+    high: "bg-green-950/60 text-green-400 border border-green-800",
+    medium: "bg-yellow-950/60 text-yellow-400 border border-yellow-800",
+    low: "bg-orange-950/60 text-orange-400 border border-orange-800",
   }[proposal.confidence]
 
   return (
     <div
-      className={`bg-white border rounded-lg overflow-hidden transition-colors ${
-        approved ? "border-blue-300" : "border-gray-200"
+      className={`bg-gray-800 border rounded-lg overflow-hidden transition-colors duration-150 ${
+        approved ? "border-blue-500" : "border-gray-700"
       }`}
     >
       <div className="px-4 py-3 flex items-start gap-3">
@@ -465,39 +547,37 @@ function ProposalCard({
           type="checkbox"
           checked={approved}
           onChange={onToggle}
-          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 cursor-pointer"
+          className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-500 cursor-pointer"
         />
         <div className="flex-1 min-w-0 space-y-2">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-900">
+            <span className="text-sm font-medium text-gray-100">
               {proposal.explanation}
             </span>
-            <span
-              className={`text-xs px-1.5 py-0.5 rounded font-medium ${confidenceColor}`}
-            >
+            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${confidenceBadge}`}>
               {proposal.confidence}
             </span>
           </div>
 
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div className="space-y-1">
-              <p className="font-medium text-gray-500 uppercase tracking-wide text-[10px]">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">
                 Replacing ({originalFilters.length})
               </p>
               {originalFilters.map((f) => (
                 <div
                   key={f.id}
-                  className="font-mono bg-red-50 text-red-800 px-2 py-1 rounded"
+                  className="font-mono bg-red-950/40 text-red-300 px-2 py-1 rounded"
                 >
                   {describeCriteria(f.criteria)}
                 </div>
               ))}
             </div>
             <div className="space-y-1">
-              <p className="font-medium text-gray-500 uppercase tracking-wide text-[10px]">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">
                 New rule
               </p>
-              <div className="font-mono bg-green-50 text-green-800 px-2 py-1 rounded">
+              <div className="font-mono bg-green-950/40 text-green-300 px-2 py-1 rounded">
                 {describeCriteria(proposal.proposedCriteria)}
               </div>
             </div>
@@ -526,14 +606,14 @@ function DoneView({
   if (undoResult) {
     return (
       <div className="text-center py-12 space-y-3">
-        <p className="text-green-700 font-medium text-lg">✓ Undo complete</p>
-        <p className="text-sm text-gray-500">
+        <p className="text-green-400 font-medium text-lg">✔ Undo complete</p>
+        <p className="text-sm text-gray-400">
           {undoResult.restored.length} filter
           {undoResult.restored.length !== 1 ? "s" : ""} restored.
         </p>
         {undoResult.notRestored.length > 0 && (
           <div className="text-left max-w-md mx-auto mt-4 space-y-2">
-            <p className="text-sm font-medium text-red-700">
+            <p className="text-sm font-medium text-red-400">
               {undoResult.notRestored.length} filter
               {undoResult.notRestored.length !== 1 ? "s" : ""} could not be
               restored:
@@ -541,10 +621,10 @@ function DoneView({
             {undoResult.notRestored.map((item, i) => (
               <div
                 key={i}
-                className="text-xs bg-red-50 border border-red-200 rounded p-2 space-y-1"
+                className="text-xs bg-red-950/60 border border-red-800 rounded p-2 space-y-1"
               >
-                <p className="font-mono">{describeCriteria(item.criteria)}</p>
-                <p className="text-red-600">{item.error}</p>
+                <p className="font-mono text-red-300">{describeCriteria(item.criteria)}</p>
+                <p className="text-red-400">{item.error}</p>
               </div>
             ))}
           </div>
@@ -553,26 +633,34 @@ function DoneView({
     )
   }
 
+  const originalCount = createdCount > 0 ? deletedCount : 0
+  const consolidatedCount = createdCount
+
   return (
     <div className="space-y-6">
-      <div className="text-center py-8 space-y-2">
-        <p className="text-green-700 font-semibold text-lg">
-          ✓ Changes applied
+      <div className="text-center py-10 space-y-4">
+        <p className="text-green-400 font-semibold text-lg">
+          ✔ Your filters have been reviewed and simplified.
         </p>
-        <p className="text-sm text-gray-500">
-          {createdCount} filter{createdCount !== 1 ? "s" : ""} created,{" "}
-          {deletedCount} deleted
-          {failedCount > 0 && `, ${failedCount} failed`}
+        {consolidatedCount > 0 && originalCount > 0 && (
+          <p className="text-gray-300 text-sm">
+            You consolidated {originalCount} rule{originalCount !== 1 ? "s" : ""} into{" "}
+            {consolidatedCount} — you know exactly what&apos;s in your inbox now.
+          </p>
+        )}
+        <p className="text-gray-500 text-sm">
+          {createdCount} filter{createdCount !== 1 ? "s" : ""} created · {deletedCount} deleted
+          {failedCount > 0 && ` · ${failedCount} failed`}
         </p>
       </div>
 
       {failedCount > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-2">
-          <p className="text-sm font-medium text-red-800">
+        <div className="bg-red-950/60 border border-red-800 rounded-lg p-4 space-y-2">
+          <p className="text-sm font-medium text-red-400">
             {failedCount} operation{failedCount !== 1 ? "s" : ""} failed:
           </p>
           {applyResult.failed.map((op, i) => (
-            <p key={i} className="text-xs text-red-700 font-mono">
+            <p key={i} className="text-xs text-red-300 font-mono">
               {op.type} {op.filterId ?? ""}: {op.error}
             </p>
           ))}
@@ -580,7 +668,7 @@ function DoneView({
       )}
 
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+        <div className="p-3 bg-red-950/60 border border-red-800 rounded-lg text-sm text-red-400">
           {error}
         </div>
       )}
@@ -589,7 +677,7 @@ function DoneView({
         <div className="flex justify-center">
           <button
             onClick={onUndo}
-            className="px-4 py-2 border border-gray-300 text-sm text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            className="px-4 py-2 border border-gray-600 text-sm text-gray-300 hover:text-gray-100 hover:border-gray-500 rounded-lg transition-colors"
           >
             ↩ Undo all changes
           </button>
@@ -597,7 +685,7 @@ function DoneView({
       )}
 
       {!applyResult.undoToken && (
-        <p className="text-center text-xs text-gray-400">
+        <p className="text-center text-xs text-gray-600">
           Undo token unavailable — changes cannot be reversed automatically.
         </p>
       )}
@@ -608,9 +696,9 @@ function DoneView({
 function Loading({ message, note }: { message: string; note?: string }) {
   return (
     <div className="text-center py-16 space-y-3">
-      <div className="inline-block w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-      <p className="text-gray-700 font-medium">{message}</p>
-      {note && <p className="text-sm text-gray-400">{note}</p>}
+      <div className="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      <p className="text-gray-300 font-medium">{message}</p>
+      {note && <p className="text-sm text-gray-500 italic">{note}</p>}
     </div>
   )
 }
@@ -623,9 +711,9 @@ function Badge({
   variant: "red" | "yellow" | "green"
 }) {
   const colors = {
-    red: "bg-red-100 text-red-700",
-    yellow: "bg-yellow-100 text-yellow-700",
-    green: "bg-green-100 text-green-700",
+    red: "bg-red-950/60 text-red-400 border border-red-800",
+    yellow: "bg-yellow-950/60 text-yellow-400 border border-yellow-800",
+    green: "bg-green-950/60 text-green-400 border border-green-800",
   }
   return (
     <span
@@ -638,7 +726,7 @@ function Badge({
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="text-center py-12 text-gray-500 text-sm">{message}</div>
+    <div className="text-center py-12 text-gray-400 text-sm">{message}</div>
   )
 }
 
