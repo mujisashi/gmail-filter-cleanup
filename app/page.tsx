@@ -3,15 +3,26 @@ import { redirect } from "next/navigation"
 import { authOptions } from "@/lib/auth"
 import { SignInButton } from "./sign-in-button"
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>
+}) {
   const session = await getServerSession(authOptions)
   if (session?.access_token && !session.error) {
     redirect("/audit")
   }
 
+  const { error } = await searchParams
+
   return (
     <main className="min-h-screen flex items-center justify-center px-4">
       <div className="max-w-md w-full text-center space-y-8">
+        {error === "session_expired" && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-4 py-3">
+            Your session expired. Please sign in again.
+          </div>
+        )}
         <div className="space-y-3">
           <h1 className="text-3xl font-semibold tracking-tight">
             Gmail Filter Cleanup
