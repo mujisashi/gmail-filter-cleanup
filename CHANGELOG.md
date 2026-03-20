@@ -5,15 +5,15 @@ All notable changes to this project will be documented in this file.
 ## [0.1.2.0] - 2026-03-20
 
 ### Fixed
-- Gmail filters with no `action` field in the API response no longer crash the app. `getFilters()` now normalizes missing `action` to `{}` at the I/O boundary via `normalizeFilters()`.
-- `/api/consolidate` now returns `401` (session expired) instead of `500` when Gmail API returns 403 — matches the same error-handling pattern already in the audit page.
-- Added `gmail.labels` scope to OAuth flow so label names resolve correctly. Existing sessions without this scope are redirected to the home page with a "session expired" banner rather than crashing.
+- Gmail accounts with filters that have no action no longer crash the app on load. These are valid filters (e.g., "mark as read" with no other action) that Google returns without an `action` field.
+- The consolidation step now correctly shows "Your session has expired — please sign in again" instead of a server error when your Google session is missing the required scope.
+- Sign-in now requests the Gmail labels permission, enabling label names to resolve correctly. **Action required:** existing sessions need to re-authenticate to pick up the new scope.
 
-### Added
-- `normalizeFilters()` exported as a pure function in `lib/gmail.ts` for testability.
-- Regression tests for `normalizeFilters`: missing action field, preserved action, empty list, preserved fields (4 tests).
-- TODOs for Claude Code CLI integration (zero-config auth for CC Pro users) and API route 403 unit tests.
-- gstack skills: `/careful`, `/freeze`, `/guard`, `/investigate`, `/unfreeze`, `/codex`.
+### For contributors
+- `normalizeFilters()` extracted as an exported pure function in `lib/gmail.ts` for testability.
+- 4 regression tests for `normalizeFilters` (missing action, preserved action, empty list, field preservation).
+- TODOs added: CC CLI integration (zero-config auth for Claude Pro users) and API route 403 unit tests.
+- gstack skills vendored: `/careful`, `/freeze`, `/guard`, `/investigate`, `/unfreeze`, `/codex`.
 
 ## [0.1.1.0] - 2026-03-19
 
