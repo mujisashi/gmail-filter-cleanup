@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2.0] - 2026-03-20
+
+### Fixed
+- Gmail filters with no `action` field in the API response no longer crash the app. `getFilters()` now normalizes missing `action` to `{}` at the I/O boundary via `normalizeFilters()`.
+- `/api/consolidate` now returns `401` (session expired) instead of `500` when Gmail API returns 403 — matches the same error-handling pattern already in the audit page.
+- Added `gmail.labels` scope to OAuth flow so label names resolve correctly. Existing sessions without this scope are redirected to the home page with a "session expired" banner rather than crashing.
+
+### Added
+- `normalizeFilters()` exported as a pure function in `lib/gmail.ts` for testability.
+- Regression tests for `normalizeFilters`: missing action field, preserved action, empty list, preserved fields (4 tests).
+- TODOs for Claude Code CLI integration (zero-config auth for CC Pro users) and API route 403 unit tests.
+- gstack skills: `/careful`, `/freeze`, `/guard`, `/investigate`, `/unfreeze`, `/codex`.
+
 ## [0.1.1.0] - 2026-03-19
 
 ### Added
