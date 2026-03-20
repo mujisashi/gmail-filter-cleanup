@@ -10,7 +10,10 @@ function getGmailClient(accessToken: string) {
 export async function getFilters(accessToken: string): Promise<GmailFilter[]> {
   const gmail = getGmailClient(accessToken)
   const res = await gmail.users.settings.filters.list({ userId: "me" })
-  return (res.data.filter ?? []) as unknown as GmailFilter[]
+  return ((res.data.filter ?? []) as unknown as GmailFilter[]).map((f) => ({
+    ...f,
+    action: f.action ?? {},
+  }))
 }
 
 export async function getLabels(accessToken: string): Promise<GmailLabel[]> {
