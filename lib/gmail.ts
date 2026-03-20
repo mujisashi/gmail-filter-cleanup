@@ -7,13 +7,14 @@ function getGmailClient(accessToken: string) {
   return google.gmail({ version: "v1", auth })
 }
 
+export function normalizeFilters(raw: unknown[]): GmailFilter[] {
+  return (raw as GmailFilter[]).map((f) => ({ ...f, action: f.action ?? {} }))
+}
+
 export async function getFilters(accessToken: string): Promise<GmailFilter[]> {
   const gmail = getGmailClient(accessToken)
   const res = await gmail.users.settings.filters.list({ userId: "me" })
-  return ((res.data.filter ?? []) as unknown as GmailFilter[]).map((f) => ({
-    ...f,
-    action: f.action ?? {},
-  }))
+  return normalizeFilters(res.data.filter ?? [])
 }
 
 export async function getLabels(accessToken: string): Promise<GmailLabel[]> {
