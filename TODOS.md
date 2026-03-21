@@ -56,6 +56,12 @@ viewports, particularly the "Back" buttons and small "Sign out" link in the nav.
 
 ## Completed
 
+### Claude Code CLI as alternative to Anthropic API key
+**Completed:** v0.1.2.0 (2026-03-21)
+Implemented `consolidateFiltersViaCLI()` in `lib/consolidate.ts` via async `execFile("claude", ["-p"])`.
+Added `GET /api/check-claude-cli` for server-side detection. `KeyEntry` step auto-detects CLI on mount
+and shows "Analyze with Claude Code →" as primary CTA when available, with API key path as fallback.
+
 ### [design-review] Dark mode implementation
 **Completed:** v0.1.1.0 (2026-03-19)
 Migrated entire UI to dark palette: gray-950 base, gray-800 cards, gray-700 borders,
