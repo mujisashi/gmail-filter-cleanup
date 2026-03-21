@@ -406,7 +406,7 @@ function KeyEntry({
           </button>
           <div className="relative flex items-center gap-3">
             <div className="flex-1 border-t border-gray-700" />
-            <span className="text-xs text-gray-500">or use an API key</span>
+            <span className="text-xs text-gray-400">or use an API key</span>
             <div className="flex-1 border-t border-gray-700" />
           </div>
         </>
