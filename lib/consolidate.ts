@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk"
+import { spawnSync } from "child_process"
 import { ConsolidationResultSchema } from "./schemas"
 import type { AuditResult, ConsolidationResult } from "./types"
 
@@ -25,14 +26,31 @@ export async function consolidateFilters(
 ): Promise<ConsolidationResult> {
   const client = new Anthropic({ apiKey })
 
+  const userMessage = buildConsolidationPayload(auditResult)
+
+  const message = await client.messages.create({
+    model: "claude-opus-4-6",
+    max_tokens: 4096,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userMessage }],
+  })
+
+  const content = message.content[0]
+  if (content.type !== "text") {
+    throw new Error("Unexpected response type from Claude API")
+  }
+
+  return parseConsolidationResponse(content.text)
+}
+
+export function buildConsolidationPayload(auditResult: AuditResult): string {
   const groupsPayload = Object.fromEntries(
     Object.entries(auditResult.groupedByAction).map(([type, filters]) => [
       type,
       filters.map((f) => ({ id: f.id, criteria: f.criteria, action: f.action })),
     ])
   )
-
-  const userMessage = JSON.stringify(
+  return JSON.stringify(
     {
       filterGroups: groupsPayload,
       requiredResponseSchema: {
@@ -55,32 +73,42 @@ export async function consolidateFilters(
     null,
     2
   )
+}
 
-  const message = await client.messages.create({
-    model: "claude-opus-4-6",
-    max_tokens: 4096,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userMessage }],
-  })
-
-  const content = message.content[0]
-  if (content.type !== "text") {
-    throw new Error("Unexpected response type from Claude API")
-  }
-
+export function parseConsolidationResponse(raw: string): ConsolidationResult {
   let parsed: unknown
   try {
-    parsed = JSON.parse(content.text)
+    parsed = JSON.parse(raw.trim())
   } catch {
     throw new Error("Claude returned invalid JSON — could not parse response")
   }
-
   const result = ConsolidationResultSchema.safeParse(parsed)
   if (!result.success) {
-    throw new Error(
-      `Claude returned an invalid structure: ${result.error.message}`
-    )
+    throw new Error(`Claude returned an invalid structure: ${result.error.message}`)
+  }
+  return result.data
+}
+
+export async function consolidateFiltersViaCLI(
+  auditResult: AuditResult
+): Promise<ConsolidationResult> {
+  const userMessage = buildConsolidationPayload(auditResult)
+  const fullPrompt = `${SYSTEM_PROMPT}\n\n${userMessage}`
+
+  const result = spawnSync("claude", ["-p"], {
+    input: fullPrompt,
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+    timeout: 60_000,
+  })
+
+  if (result.error) {
+    throw new Error(`Claude CLI not found: ${result.error.message}`)
+  }
+  if (result.status !== 0) {
+    const msg = result.stderr?.trim() || "Claude CLI exited with non-zero status"
+    throw new Error(`Claude CLI error: ${msg}`)
   }
 
-  return result.data
+  return parseConsolidationResponse(result.stdout)
 }

@@ -1,7 +1,7 @@
 "use client"
 
 import { signOut } from "next-auth/react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import type {
   ApplyResult,
   AuditResult,
@@ -45,6 +45,7 @@ export function getNavState(step: Step): { active: NavStep; completed: Set<NavSt
 export function AuditClient({ auditResult }: { auditResult: AuditResult }) {
   const [step, setStep] = useState<Step>("audit")
   const [apiKey, setApiKey] = useState("")
+  const [claudeAvailable, setClaudeAvailable] = useState<boolean | null>(null)
   const [consolidationResult, setConsolidationResult] =
     useState<ConsolidationResult | null>(null)
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set())
@@ -52,14 +53,21 @@ export function AuditClient({ auditResult }: { auditResult: AuditResult }) {
   const [undoResult, setUndoResult] = useState<UndoResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  async function runConsolidation() {
+  useEffect(() => {
+    fetch("/api/check-claude-cli")
+      .then((r) => r.json())
+      .then((d) => setClaudeAvailable(d.available === true))
+      .catch(() => setClaudeAvailable(false))
+  }, [])
+
+  async function runConsolidation(useLocalClaude = false) {
     setStep("consolidating")
     setError(null)
     try {
       const res = await fetch("/api/consolidate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey }),
+        body: JSON.stringify(useLocalClaude ? { useLocalClaude: true } : { apiKey }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? "Consolidation failed")
@@ -171,9 +179,11 @@ export function AuditClient({ auditResult }: { auditResult: AuditResult }) {
           <KeyEntry
             apiKey={apiKey}
             onChange={setApiKey}
-            onSubmit={runConsolidation}
+            onSubmit={() => runConsolidation(false)}
+            onUseLocalClaude={() => runConsolidation(true)}
             onBack={() => setStep("audit")}
             error={error}
+            claudeAvailable={claudeAvailable}
           />
         )}
 
@@ -357,14 +367,18 @@ function KeyEntry({
   apiKey,
   onChange,
   onSubmit,
+  onUseLocalClaude,
   onBack,
   error,
+  claudeAvailable,
 }: {
   apiKey: string
   onChange: (v: string) => void
   onSubmit: () => void
+  onUseLocalClaude: () => void
   onBack: () => void
   error: string | null
+  claudeAvailable: boolean | null
 }) {
   const isAuthError = error && (
     error.toLowerCase().includes("api key") ||
@@ -375,13 +389,38 @@ function KeyEntry({
 
   return (
     <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 space-y-4 max-w-md mx-auto">
-      <div>
-        <h2 className="font-semibold text-gray-100">Enter your Anthropic API key</h2>
-        <p className="text-sm text-gray-400 mt-1">
-          Your key is sent directly to the Claude API and is never stored on our
-          servers.
-        </p>
-      </div>
+
+      {claudeAvailable && (
+        <>
+          <div>
+            <h2 className="font-semibold text-gray-100">Use your local Claude Code</h2>
+            <p className="text-sm text-gray-400 mt-1">
+              Claude Code is installed and authenticated — no API key needed.
+            </p>
+          </div>
+          <button
+            onClick={onUseLocalClaude}
+            className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-500 transition-colors"
+          >
+            Analyze with Claude Code →
+          </button>
+          <div className="relative flex items-center gap-3">
+            <div className="flex-1 border-t border-gray-700" />
+            <span className="text-xs text-gray-500">or use an API key</span>
+            <div className="flex-1 border-t border-gray-700" />
+          </div>
+        </>
+      )}
+
+      {!claudeAvailable && (
+        <div>
+          <h2 className="font-semibold text-gray-100">Enter your Anthropic API key</h2>
+          <p className="text-sm text-gray-400 mt-1">
+            Your key is sent directly to the Claude API and is never stored on our
+            servers.
+          </p>
+        </div>
+      )}
 
       <div className="space-y-1">
         <input
