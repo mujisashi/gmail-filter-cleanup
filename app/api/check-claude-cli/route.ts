@@ -1,7 +1,10 @@
 import { getServerSession } from "next-auth/next"
 import { NextResponse } from "next/server"
-import { spawnSync } from "child_process"
+import { execFile } from "child_process"
+import { promisify } from "util"
 import { authOptions } from "@/lib/auth"
+
+const execFileAsync = promisify(execFile)
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -10,15 +13,12 @@ export async function GET() {
   }
 
   try {
-    const result = spawnSync("claude", ["--version"], {
+    const { stdout } = await execFileAsync("claude", ["--version"], {
       encoding: "utf8",
       timeout: 5000,
     })
-    if (result.status === 0) {
-      const version = result.stdout.trim().split("\n")[0] ?? "unknown"
-      return NextResponse.json({ available: true, version })
-    }
-    return NextResponse.json({ available: false })
+    const version = stdout.trim().split("\n")[0] ?? "unknown"
+    return NextResponse.json({ available: true, version })
   } catch {
     return NextResponse.json({ available: false })
   }

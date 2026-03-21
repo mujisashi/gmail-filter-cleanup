@@ -1,7 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk"
-import { spawnSync } from "child_process"
+import { execFile } from "child_process"
+import { promisify } from "util"
 import { ConsolidationResultSchema } from "./schemas"
 import type { AuditResult, ConsolidationResult } from "./types"
+
+const execFileAsync = promisify(execFile)
 
 const SYSTEM_PROMPT = `You are an expert at Gmail filter management. Analyze Gmail filters grouped by their action type and identify consolidation opportunities.
 
@@ -76,9 +79,14 @@ export function buildConsolidationPayload(auditResult: AuditResult): string {
 }
 
 export function parseConsolidationResponse(raw: string): ConsolidationResult {
+  // Extract the JSON object — CLI output may contain ANSI codes or status lines
+  const jsonMatch = raw.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) {
+    throw new Error("Claude returned no JSON — check that claude is authenticated")
+  }
   let parsed: unknown
   try {
-    parsed = JSON.parse(raw.trim())
+    parsed = JSON.parse(jsonMatch[0])
   } catch {
     throw new Error("Claude returned invalid JSON — could not parse response")
   }
@@ -95,20 +103,22 @@ export async function consolidateFiltersViaCLI(
   const userMessage = buildConsolidationPayload(auditResult)
   const fullPrompt = `${SYSTEM_PROMPT}\n\n${userMessage}`
 
-  const result = spawnSync("claude", ["-p"], {
-    input: fullPrompt,
-    encoding: "utf8",
-    maxBuffer: 4 * 1024 * 1024,
-    timeout: 60_000,
-  })
-
-  if (result.error) {
-    throw new Error(`Claude CLI not found: ${result.error.message}`)
-  }
-  if (result.status !== 0) {
-    const msg = result.stderr?.trim() || "Claude CLI exited with non-zero status"
+  let stdout: string
+  try {
+    const result = await execFileAsync("claude", ["-p"], {
+      input: fullPrompt,
+      encoding: "utf8",
+      maxBuffer: 4 * 1024 * 1024,
+      timeout: 60_000,
+    })
+    stdout = result.stdout
+  } catch (err: any) {
+    if (err.code === "ENOENT") {
+      throw new Error("Claude CLI not found — install Claude Code to use this option")
+    }
+    const msg = err.stderr?.trim() || err.message || "Claude CLI exited with non-zero status"
     throw new Error(`Claude CLI error: ${msg}`)
   }
 
-  return parseConsolidationResponse(result.stdout)
+  return parseConsolidationResponse(stdout)
 }
