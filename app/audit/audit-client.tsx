@@ -390,7 +390,7 @@ function KeyEntry({
   return (
     <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 space-y-4 max-w-md mx-auto">
 
-      {claudeAvailable && (
+      {claudeAvailable === true && (
         <>
           <div>
             <h2 className="font-semibold text-gray-100">Use your local Claude Code</h2>
@@ -412,7 +412,7 @@ function KeyEntry({
         </>
       )}
 
-      {!claudeAvailable && (
+      {claudeAvailable === false && (
         <div>
           <h2 className="font-semibold text-gray-100">Enter your Anthropic API key</h2>
           <p className="text-sm text-gray-400 mt-1">
