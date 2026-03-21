@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3.0] - 2026-03-21
+
+### Added
+- **Claude Code CLI integration** — users with Claude Code installed can now run consolidation without an Anthropic API key. The "Enter Key" step auto-detects the local `claude` CLI on mount and shows an "Analyze with Claude Code →" button as the primary option when available. The API key path remains fully functional as a fallback.
+- `GET /api/check-claude-cli` — new authenticated endpoint that detects whether the `claude` CLI is installed and returns its version. Used by the client on mount to show/hide the CLI option.
+- `consolidateFiltersViaCLI()` in `lib/consolidate.ts` — runs `claude -p` as a subprocess to perform consolidation using the local Claude Code session. Shares the same prompt-building and response-parsing logic as the API key path.
+
+### Changed
+- CLI invocation uses async `execFile` (non-blocking) instead of `spawnSync`, so the server remains responsive during consolidation.
+- `parseConsolidationResponse` now extracts JSON via regex before parsing, handling any ANSI codes or status lines the CLI may prepend to output.
+- The "Enter Key" heading now renders only after CLI detection resolves (`null` loading state shows nothing, avoiding a flicker for CLI users).
+- Landing page copy updated to mention both options: "Use your local Claude Code (if installed) or enter an Anthropic API key."
+- Divider label "or use an API key" uses `text-gray-400` for WCAG AA compliance (was `text-gray-500`).
+
+### For contributors
+- 16 new unit tests in `__tests__/consolidate.test.ts` covering `buildConsolidationPayload`, `parseConsolidationResponse` (including prefix/suffix noise, invalid JSON, wrong schema), and `consolidateFiltersViaCLI` (success, ENOENT, non-zero exit, prompt passthrough).
+
 ## [0.1.2.0] - 2026-03-20
 
 ### Fixed
