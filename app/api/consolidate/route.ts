@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth/next"
 import { NextResponse } from "next/server"
 import { authOptions } from "@/lib/auth"
 import { runAudit } from "@/lib/audit"
-import { consolidateFilters } from "@/lib/consolidate"
+import { consolidateFilters, consolidateFiltersViaCLI } from "@/lib/consolidate"
 import { getFilters, getLabels } from "@/lib/gmail"
 
 export const maxDuration = 60
@@ -19,16 +19,20 @@ export async function POST(request: Request) {
     )
   }
 
-  let apiKey: string
+  let apiKey: string | null = null
+  let useLocalClaude = false
   try {
     const body = await request.json()
-    if (typeof body.apiKey !== "string" || !body.apiKey.trim()) {
+    if (body.useLocalClaude === true) {
+      useLocalClaude = true
+    } else if (typeof body.apiKey === "string" && body.apiKey.trim()) {
+      apiKey = body.apiKey.trim()
+    } else {
       return NextResponse.json(
         { error: "Missing or invalid Anthropic API key" },
         { status: 400 }
       )
     }
-    apiKey = body.apiKey.trim()
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
@@ -55,6 +59,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ proposals: [], unchangedFilterIds: [] })
   }
 
-  const result = await consolidateFilters(apiKey, auditResult)
+  const result = useLocalClaude
+    ? await consolidateFiltersViaCLI(auditResult)
+    : await consolidateFilters(apiKey!, auditResult)
   return NextResponse.json(result)
 }

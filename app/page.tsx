@@ -45,7 +45,8 @@ export default async function Home({
             accessed.
           </p>
           <p className="text-[11px] text-gray-500">
-            AI consolidation uses Claude — you'll need an Anthropic API key.{" "}
+            AI consolidation uses Claude. Use your local Claude Code (if
+            installed) or enter an Anthropic API key.{" "}
             <a
               href="https://console.anthropic.com"
               target="_blank"
