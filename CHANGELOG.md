@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2.0] - 2026-03-20
+
+### Fixed
+- Gmail accounts with filters that have no action no longer crash the app on load. These are valid filters (e.g., "mark as read" with no other action) that Google returns without an `action` field.
+- The consolidation step now correctly shows "Your session has expired — please sign in again" instead of a server error when your Google session is missing the required scope.
+- Sign-in now requests the Gmail labels permission, enabling label names to resolve correctly. **Action required:** existing sessions need to re-authenticate to pick up the new scope.
+
+### For contributors
+- `normalizeFilters()` extracted as an exported pure function in `lib/gmail.ts` for testability.
+- 4 regression tests for `normalizeFilters` (missing action, preserved action, empty list, field preservation).
+- TODOs added: CC CLI integration (zero-config auth for Claude Pro users) and API route 403 unit tests.
+- gstack skills vendored: `/careful`, `/freeze`, `/guard`, `/investigate`, `/unfreeze`, `/codex`.
+
 ## [0.1.1.0] - 2026-03-19
 
 ### Added
