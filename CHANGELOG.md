@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4.0] - 2026-03-22
+
+### Fixed
+- **Claude CLI stdin not delivered** — `execFile` silently ignores the `input` option, so the prompt was never reaching `claude -p`. The CLI would hang waiting for stdin, causing the request to time out and the client to show "Unexpected end of JSON input". Replaced with a `spawn`-based helper (`spawnWithStdin`) that explicitly pipes stdin via `child.stdin.write/end`, matching how `spawnSync` handled it before the async refactor.
+
+### For contributors
+- Updated `consolidateFiltersViaCLI` tests to mock `spawn` (via EventEmitter-based `makeFakeChild`) instead of the removed `execFile` import.
+
 ## [0.1.3.0] - 2026-03-21
 
 ### Added
