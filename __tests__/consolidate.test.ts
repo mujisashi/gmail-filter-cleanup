@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest"
+import { EventEmitter } from "events"
 import {
   buildConsolidationPayload,
   parseConsolidationResponse,
@@ -132,12 +133,27 @@ describe("parseConsolidationResponse", () => {
 // consolidateFiltersViaCLI
 // ---------------------------------------------------------------------------
 
-vi.mock("child_process", () => ({
-  execFile: vi.fn(),
-}))
-vi.mock("util", () => ({
-  promisify: (fn: Function) => fn,
-}))
+// Helper: create a fake child process that emits stdout, stderr, and close events
+function makeFakeChild(stdout: string, stderr: string, exitCode: number, spawnError?: Error) {
+  const child = new EventEmitter() as any
+  child.stdout = new EventEmitter()
+  child.stderr = new EventEmitter()
+  child.stdin = { write: vi.fn(), end: vi.fn() }
+  child.kill = vi.fn()
+
+  setImmediate(() => {
+    if (spawnError) {
+      child.emit("error", spawnError)
+      return
+    }
+    if (stdout) child.stdout.emit("data", Buffer.from(stdout))
+    if (stderr) child.stderr.emit("data", Buffer.from(stderr))
+    child.emit("close", exitCode)
+  })
+  return child
+}
+
+vi.mock("child_process", () => ({ spawn: vi.fn() }))
 
 describe("consolidateFiltersViaCLI", () => {
   beforeEach(() => {
@@ -145,8 +161,8 @@ describe("consolidateFiltersViaCLI", () => {
   })
 
   it("returns parsed result on successful CLI invocation", async () => {
-    const { execFile } = await import("child_process")
-    vi.mocked(execFile).mockResolvedValue({ stdout: VALID_RESPONSE_JSON, stderr: "" } as any)
+    const { spawn } = await import("child_process")
+    vi.mocked(spawn).mockReturnValue(makeFakeChild(VALID_RESPONSE_JSON, "", 0) as any)
 
     const result = await consolidateFiltersViaCLI(makeAuditResult())
     expect(result.proposals).toHaveLength(1)
@@ -154,10 +170,10 @@ describe("consolidateFiltersViaCLI", () => {
   })
 
   it("throws when CLI is not found (ENOENT)", async () => {
-    const { execFile } = await import("child_process")
-    const err: any = new Error("not found")
+    const { spawn } = await import("child_process")
+    const err: any = new Error("spawn claude ENOENT")
     err.code = "ENOENT"
-    vi.mocked(execFile).mockRejectedValue(err)
+    vi.mocked(spawn).mockReturnValue(makeFakeChild("", "", 1, err) as any)
 
     await expect(consolidateFiltersViaCLI(makeAuditResult())).rejects.toThrow(
       "Claude CLI not found"
@@ -165,26 +181,25 @@ describe("consolidateFiltersViaCLI", () => {
   })
 
   it("throws with stderr message when CLI exits non-zero", async () => {
-    const { execFile } = await import("child_process")
-    const err: any = new Error("Command failed")
-    err.stderr = "Authentication required"
-    vi.mocked(execFile).mockRejectedValue(err)
+    const { spawn } = await import("child_process")
+    vi.mocked(spawn).mockReturnValue(
+      makeFakeChild("", "Authentication required", 1) as any
+    )
 
     await expect(consolidateFiltersViaCLI(makeAuditResult())).rejects.toThrow(
       "Claude CLI error"
     )
   })
 
-  it("passes the full prompt (system + user message) to the CLI", async () => {
-    const { execFile } = await import("child_process")
-    let capturedOpts: any
-    vi.mocked(execFile).mockImplementation((_cmd: any, _args: any, opts: any) => {
-      capturedOpts = opts
-      return Promise.resolve({ stdout: VALID_RESPONSE_JSON, stderr: "" }) as any
-    })
+  it("passes the full prompt (system + user message) via stdin", async () => {
+    const { spawn } = await import("child_process")
+    const fakeChild = makeFakeChild(VALID_RESPONSE_JSON, "", 0)
+    vi.mocked(spawn).mockReturnValue(fakeChild as any)
 
     await consolidateFiltersViaCLI(makeAuditResult())
-    expect(capturedOpts.input).toContain("Gmail filter management")
-    expect(capturedOpts.input).toContain("filterGroups")
+
+    const writtenInput = (fakeChild.stdin.write as any).mock.calls[0][0] as string
+    expect(writtenInput).toContain("Gmail filter management")
+    expect(writtenInput).toContain("filterGroups")
   })
 })
