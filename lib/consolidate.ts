@@ -1,10 +1,47 @@
 import Anthropic from "@anthropic-ai/sdk"
-import { execFile } from "child_process"
-import { promisify } from "util"
+import { spawn } from "child_process"
 import { ConsolidationResultSchema } from "./schemas"
 import type { AuditResult, ConsolidationResult } from "./types"
 
-const execFileAsync = promisify(execFile)
+function spawnWithStdin(
+  cmd: string,
+  args: string[],
+  input: string,
+  timeoutMs: number
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: "pipe" })
+    let stdout = ""
+    let stderr = ""
+
+    const timer = setTimeout(() => {
+      child.kill()
+      reject(new Error(`Claude CLI timed out after ${timeoutMs / 1000}s`))
+    }, timeoutMs)
+
+    child.stdout.on("data", (d: Buffer) => { stdout += d.toString() })
+    child.stderr.on("data", (d: Buffer) => { stderr += d.toString() })
+    child.on("error", (err: any) => {
+      clearTimeout(timer)
+      reject(err)
+    })
+    child.on("close", (code: number | null) => {
+      clearTimeout(timer)
+      if (code === 0) {
+        resolve(stdout)
+      } else {
+        const msg = stderr.trim() || `Claude CLI exited with code ${code}`
+        const err: any = new Error(msg)
+        err.code = code
+        err.stderr = stderr
+        reject(err)
+      }
+    })
+
+    child.stdin.write(input)
+    child.stdin.end()
+  })
+}
 
 const SYSTEM_PROMPT = `You are an expert at Gmail filter management. Analyze Gmail filters grouped by their action type and identify consolidation opportunities.
 
@@ -105,13 +142,7 @@ export async function consolidateFiltersViaCLI(
 
   let stdout: string
   try {
-    const result = await execFileAsync("claude", ["-p"], {
-      input: fullPrompt,
-      encoding: "utf8",
-      maxBuffer: 4 * 1024 * 1024,
-      timeout: 60_000,
-    })
-    stdout = result.stdout
+    stdout = await spawnWithStdin("claude", ["-p"], fullPrompt, 60_000)
   } catch (err: any) {
     if (err.code === "ENOENT") {
       throw new Error("Claude CLI not found — install Claude Code to use this option")
