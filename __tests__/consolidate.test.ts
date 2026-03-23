@@ -2,6 +2,8 @@ import { describe, expect, it, vi, beforeEach } from "vitest"
 import { EventEmitter } from "events"
 import {
   buildConsolidationPayload,
+  buildSubGroupPayload,
+  getConsolidatableSubGroups,
   parseConsolidationResponse,
   consolidateFiltersViaCLI,
 } from "@/lib/consolidate"
@@ -43,6 +45,30 @@ const makeAuditResult = (): AuditResult => ({
   },
 })
 
+// Audit result with two independent action sub-groups for parallel processing tests
+const makeMultiSubGroupAuditResult = (): AuditResult => ({
+  stats: { total: 4, deadLabels: 0, duplicates: 0 },
+  filters: [
+    { id: "f1", criteria: { from: "a@x.com" }, action: { addLabelIds: ["INBOX"] } },
+    { id: "f2", criteria: { from: "b@x.com" }, action: { addLabelIds: ["INBOX"] } },
+    { id: "f3", criteria: { from: "c@x.com" }, action: { removeLabelIds: ["SPAM"] } },
+    { id: "f4", criteria: { from: "d@x.com" }, action: { removeLabelIds: ["SPAM"] } },
+  ],
+  labels: [],
+  deadLabelFilterIds: [],
+  duplicateGroups: [],
+  groupedByAction: {
+    skip_inbox: [
+      { id: "f1", criteria: { from: "a@x.com" }, action: { addLabelIds: ["INBOX"] } },
+      { id: "f2", criteria: { from: "b@x.com" }, action: { addLabelIds: ["INBOX"] } },
+    ],
+    never_spam: [
+      { id: "f3", criteria: { from: "c@x.com" }, action: { removeLabelIds: ["SPAM"] } },
+      { id: "f4", criteria: { from: "d@x.com" }, action: { removeLabelIds: ["SPAM"] } },
+    ],
+  },
+})
+
 // ---------------------------------------------------------------------------
 // buildConsolidationPayload
 // ---------------------------------------------------------------------------
@@ -70,13 +96,127 @@ describe("buildConsolidationPayload", () => {
   it("includes requiredResponseSchema to guide the model", () => {
     const payload = JSON.parse(buildConsolidationPayload(makeAuditResult()))
     expect(payload).toHaveProperty("requiredResponseSchema.proposals")
-    expect(payload).toHaveProperty("requiredResponseSchema.unchangedFilterIds")
+    // unchangedFilterIds removed from schema — computed server-side, not by model
   })
 
   it("produces empty filterGroups for audit with no filters", () => {
     const empty: AuditResult = { ...makeAuditResult(), groupedByAction: {}, filters: [] }
     const payload = JSON.parse(buildConsolidationPayload(empty))
     expect(Object.keys(payload.filterGroups)).toHaveLength(0)
+  })
+
+  it("excludes singleton groups — groups with 1 filter cannot be consolidated", () => {
+    const withSingleton: AuditResult = {
+      ...makeAuditResult(),
+      groupedByAction: {
+        skip_inbox: [
+          { id: "f1", criteria: { from: "a@x.com" }, action: { addLabelIds: ["INBOX"] } },
+          { id: "f2", criteria: { from: "b@x.com" }, action: { addLabelIds: ["INBOX"] } },
+        ],
+        apply_label: [
+          { id: "f3", criteria: { from: "c@x.com" }, action: { addLabelIds: ["Label_1"] } },
+        ],
+      },
+    }
+    const payload = JSON.parse(buildConsolidationPayload(withSingleton))
+    expect(payload.filterGroups).toHaveProperty("skip_inbox")
+    expect(payload.filterGroups).not.toHaveProperty("apply_label")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildSubGroupPayload
+// ---------------------------------------------------------------------------
+
+describe("buildSubGroupPayload", () => {
+  it("returns valid JSON string", () => {
+    const filters = [
+      { id: "f1", criteria: { from: "a@x.com" }, action: { addLabelIds: ["INBOX"] } },
+      { id: "f2", criteria: { from: "b@x.com" }, action: { addLabelIds: ["INBOX"] } },
+    ]
+    expect(() => JSON.parse(buildSubGroupPayload("skip_inbox", filters))).not.toThrow()
+  })
+
+  it("scopes filterGroups to the given groupType only", () => {
+    const filters = [
+      { id: "f1", criteria: { from: "a@x.com" }, action: { addLabelIds: ["INBOX"] } },
+      { id: "f2", criteria: { from: "b@x.com" }, action: { addLabelIds: ["INBOX"] } },
+    ]
+    const payload = JSON.parse(buildSubGroupPayload("skip_inbox", filters))
+    expect(Object.keys(payload.filterGroups)).toEqual(["skip_inbox"])
+    expect(payload.filterGroups.skip_inbox).toHaveLength(2)
+  })
+
+  it("includes requiredResponseSchema", () => {
+    const filters = [
+      { id: "f1", criteria: { from: "a@x.com" }, action: { addLabelIds: ["INBOX"] } },
+      { id: "f2", criteria: { from: "b@x.com" }, action: { addLabelIds: ["INBOX"] } },
+    ]
+    const payload = JSON.parse(buildSubGroupPayload("skip_inbox", filters))
+    expect(payload).toHaveProperty("requiredResponseSchema.proposals")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getConsolidatableSubGroups
+// ---------------------------------------------------------------------------
+
+describe("getConsolidatableSubGroups", () => {
+  it("returns empty array when there are no filters", () => {
+    const empty: AuditResult = { ...makeAuditResult(), groupedByAction: {}, filters: [] }
+    expect(getConsolidatableSubGroups(empty)).toHaveLength(0)
+  })
+
+  it("returns one sub-group for a single group with 2 identical-action filters", () => {
+    const result = getConsolidatableSubGroups(makeAuditResult())
+    expect(result).toHaveLength(1)
+    expect(result[0].groupType).toBe("skip_inbox")
+    expect(result[0].filters).toHaveLength(2)
+  })
+
+  it("returns two sub-groups for two independent action groups", () => {
+    const result = getConsolidatableSubGroups(makeMultiSubGroupAuditResult())
+    expect(result).toHaveLength(2)
+    const groupTypes = result.map((g) => g.groupType).sort()
+    expect(groupTypes).toEqual(["never_spam", "skip_inbox"])
+  })
+
+  it("splits one groupType into separate sub-groups when actions differ", () => {
+    const mixedActions: AuditResult = {
+      ...makeAuditResult(),
+      groupedByAction: {
+        delete: [
+          { id: "f1", criteria: { from: "a@x.com" }, action: { addLabelIds: ["TRASH"] } },
+          { id: "f2", criteria: { from: "b@x.com" }, action: { addLabelIds: ["TRASH"] } },
+          // different action fingerprint: also removes IMPORTANT
+          { id: "f3", criteria: { from: "c@x.com" }, action: { addLabelIds: ["TRASH"], removeLabelIds: ["IMPORTANT"] } },
+          { id: "f4", criteria: { from: "d@x.com" }, action: { addLabelIds: ["TRASH"], removeLabelIds: ["IMPORTANT"] } },
+        ],
+      },
+    }
+    const result = getConsolidatableSubGroups(mixedActions)
+    expect(result).toHaveLength(2)
+    expect(result.every((g) => g.groupType === "delete")).toBe(true)
+    const sizes = result.map((g) => g.filters.length).sort()
+    expect(sizes).toEqual([2, 2])
+  })
+
+  it("excludes singleton action sub-groups (cannot be consolidated)", () => {
+    const withSingleton: AuditResult = {
+      ...makeAuditResult(),
+      groupedByAction: {
+        skip_inbox: [
+          { id: "f1", criteria: { from: "a@x.com" }, action: { addLabelIds: ["INBOX"] } },
+          { id: "f2", criteria: { from: "b@x.com" }, action: { addLabelIds: ["INBOX"] } },
+        ],
+        apply_label: [
+          { id: "f3", criteria: { from: "c@x.com" }, action: { addLabelIds: ["Label_1"] } },
+        ],
+      },
+    }
+    const result = getConsolidatableSubGroups(withSingleton)
+    expect(result).toHaveLength(1)
+    expect(result[0].groupType).toBe("skip_inbox")
   })
 })
 
@@ -209,7 +349,7 @@ describe("consolidateFiltersViaCLI", () => {
 
     await consolidateFiltersViaCLI(makeAuditResult())
 
-    // stdin receives only the user message (filter JSON), not the system prompt
+    // stdin receives a sub-group payload (filter JSON), not the system prompt
     const writtenInput = (fakeChild.stdin.write as any).mock.calls[0][0] as string
     expect(writtenInput).toContain("filterGroups")
     expect(writtenInput).not.toContain("Gmail filter management") // system prompt is in --system-prompt arg
@@ -219,5 +359,67 @@ describe("consolidateFiltersViaCLI", () => {
     expect(spawnArgs).toContain("--system-prompt")
     expect(spawnArgs).toContain("--tools")
     expect(spawnArgs).toContain("--output-format")
+  })
+
+  it("spawns one CLI process per action sub-group (parallel fan-out)", async () => {
+    const { spawn } = await import("child_process")
+    // Two sub-groups (skip_inbox + never_spam) → two spawn calls
+    const proposal2 = {
+      ...VALID_PROPOSAL,
+      id: "p2",
+      groupType: "never_spam",
+      originalFilterIds: ["f3", "f4"],
+      proposedAction: { removeLabelIds: ["SPAM"] },
+    }
+    vi.mocked(spawn)
+      .mockReturnValueOnce(makeFakeChild(VALID_RESPONSE_JSON, "", 0) as any)
+      .mockReturnValueOnce(makeFakeChild(JSON.stringify({ proposals: [proposal2] }), "", 0) as any)
+
+    const result = await consolidateFiltersViaCLI(makeMultiSubGroupAuditResult())
+
+    expect(vi.mocked(spawn)).toHaveBeenCalledTimes(2)
+    expect(result.proposals).toHaveLength(2)
+    expect(result.proposals.map((p) => p.id).sort()).toEqual(["p1", "p2"])
+  })
+
+  it("merges proposals from all sub-groups and computes unchangedFilterIds", async () => {
+    const { spawn } = await import("child_process")
+    const proposal2 = {
+      ...VALID_PROPOSAL,
+      id: "p2",
+      groupType: "never_spam",
+      originalFilterIds: ["f3", "f4"],
+      proposedAction: { removeLabelIds: ["SPAM"] },
+    }
+    vi.mocked(spawn)
+      .mockReturnValueOnce(makeFakeChild(VALID_RESPONSE_JSON, "", 0) as any)
+      .mockReturnValueOnce(makeFakeChild(JSON.stringify({ proposals: [proposal2] }), "", 0) as any)
+
+    const result = await consolidateFiltersViaCLI(makeMultiSubGroupAuditResult())
+
+    // f1+f2 proposed, f3+f4 proposed → all 4 in proposals, none unchanged
+    expect(result.unchangedFilterIds).toHaveLength(0)
+  })
+
+  it("returns empty result without spawning when there are no consolidatable sub-groups", async () => {
+    const { spawn } = await import("child_process")
+    const emptyAudit: AuditResult = { ...makeAuditResult(), groupedByAction: {}, filters: [] }
+
+    const result = await consolidateFiltersViaCLI(emptyAudit)
+
+    expect(vi.mocked(spawn)).not.toHaveBeenCalled()
+    expect(result.proposals).toHaveLength(0)
+    expect(result.unchangedFilterIds).toHaveLength(0)
+  })
+
+  it("fails fast if any sub-group CLI call fails", async () => {
+    const { spawn } = await import("child_process")
+    vi.mocked(spawn)
+      .mockReturnValueOnce(makeFakeChild(VALID_RESPONSE_JSON, "", 0) as any)
+      .mockReturnValueOnce(makeFakeChild("", "Auth error", 1) as any)
+
+    await expect(consolidateFiltersViaCLI(makeMultiSubGroupAuditResult())).rejects.toThrow(
+      "Claude CLI error"
+    )
   })
 })
