@@ -16,7 +16,7 @@ function spawnWithStdin(
 
     const timer = setTimeout(() => {
       child.kill()
-      reject(new Error(`Claude CLI timed out after ${timeoutMs / 1000}s`))
+      reject(new Error(`Claude CLI timed out after ${timeoutMs / 1000}s — try again or use the API key option`))
     }, timeoutMs)
 
     child.stdout.on("data", (d: Buffer) => { stdout += d.toString() })
@@ -138,11 +138,15 @@ export async function consolidateFiltersViaCLI(
   auditResult: AuditResult
 ): Promise<ConsolidationResult> {
   const userMessage = buildConsolidationPayload(auditResult)
-  const fullPrompt = `${SYSTEM_PROMPT}\n\n${userMessage}`
 
   let stdout: string
   try {
-    stdout = await spawnWithStdin("claude", ["-p"], fullPrompt, 60_000)
+    stdout = await spawnWithStdin(
+      "claude",
+      ["-p", "--tools", "", "--system-prompt", SYSTEM_PROMPT, "--output-format", "json"],
+      userMessage,
+      120_000
+    )
   } catch (err: any) {
     if (err.code === "ENOENT") {
       throw new Error("Claude CLI not found — install Claude Code to use this option")
@@ -151,5 +155,14 @@ export async function consolidateFiltersViaCLI(
     throw new Error(`Claude CLI error: ${msg}`)
   }
 
-  return parseConsolidationResponse(stdout)
+  // --output-format json wraps the response: { result: "<text>", ... }
+  let responseText = stdout
+  try {
+    const parsed = JSON.parse(stdout)
+    if (typeof parsed?.result === "string") responseText = parsed.result
+  } catch {
+    // not JSON-wrapped — fall through to parseConsolidationResponse as-is
+  }
+
+  return parseConsolidationResponse(responseText)
 }

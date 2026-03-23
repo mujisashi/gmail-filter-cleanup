@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.5.0] - 2026-03-23
+
+### Fixed
+- **Claude CLI tool-use hang** — `claude -p` has tools (Bash, Read, etc.) enabled by default. In a project with `CLAUDE.md` loading gstack skills, Claude may attempt tool use instead of returning JSON, causing a silent hang with no output. Fixed by passing `--tools ""` to disable all tools, and `--system-prompt` as a CLI flag (separating system prompt from user message). Also adds `--output-format json` for structured output with `.result` field extraction.
+- **Bare 500 crashes the client** — when `consolidateFiltersViaCLI` threw an error, Next.js returned an empty 500 body. The client's `res.json()` call then failed with "Unexpected end of JSON input". Wrapped the consolidation call in a try/catch that returns `{ error: "..." }` JSON regardless of failure mode.
+- **Timeout message improved** — timeout error now reads "try again or use the API key option" to give users actionable next steps.
+
+### Changed
+- CLI timeout increased from 60s to 120s to account for longer LLM response times at high context.
+
+### For contributors
+- 1 new unit test in `__tests__/consolidate.test.ts` covering the `--output-format json` wrapper extraction (the `.result` field path that is actually used in production).
+
 ## [0.1.4.0] - 2026-03-22
 
 ### Fixed

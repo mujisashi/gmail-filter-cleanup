@@ -169,6 +169,17 @@ describe("consolidateFiltersViaCLI", () => {
     expect(result.proposals[0].confidence).toBe("high")
   })
 
+  it("unwraps --output-format json envelope when CLI returns { result: '...' }", async () => {
+    const { spawn } = await import("child_process")
+    // Simulate the actual --output-format json output from the Claude CLI
+    const wrapped = JSON.stringify({ type: "result", result: VALID_RESPONSE_JSON, session_id: "s1" })
+    vi.mocked(spawn).mockReturnValue(makeFakeChild(wrapped, "", 0) as any)
+
+    const result = await consolidateFiltersViaCLI(makeAuditResult())
+    expect(result.proposals).toHaveLength(1)
+    expect(result.proposals[0].id).toBe("p1")
+  })
+
   it("throws when CLI is not found (ENOENT)", async () => {
     const { spawn } = await import("child_process")
     const err: any = new Error("spawn claude ENOENT")
@@ -191,15 +202,22 @@ describe("consolidateFiltersViaCLI", () => {
     )
   })
 
-  it("passes the full prompt (system + user message) via stdin", async () => {
+  it("passes only the user message via stdin and system prompt via --system-prompt arg", async () => {
     const { spawn } = await import("child_process")
     const fakeChild = makeFakeChild(VALID_RESPONSE_JSON, "", 0)
     vi.mocked(spawn).mockReturnValue(fakeChild as any)
 
     await consolidateFiltersViaCLI(makeAuditResult())
 
+    // stdin receives only the user message (filter JSON), not the system prompt
     const writtenInput = (fakeChild.stdin.write as any).mock.calls[0][0] as string
-    expect(writtenInput).toContain("Gmail filter management")
     expect(writtenInput).toContain("filterGroups")
+    expect(writtenInput).not.toContain("Gmail filter management") // system prompt is in --system-prompt arg
+
+    // system prompt passed as a CLI arg, not via stdin
+    const spawnArgs = vi.mocked(spawn).mock.calls[0][1] as string[]
+    expect(spawnArgs).toContain("--system-prompt")
+    expect(spawnArgs).toContain("--tools")
+    expect(spawnArgs).toContain("--output-format")
   })
 })

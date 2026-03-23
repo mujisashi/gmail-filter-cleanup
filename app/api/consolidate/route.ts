@@ -59,8 +59,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ proposals: [], unchangedFilterIds: [] })
   }
 
-  const result = useLocalClaude
-    ? await consolidateFiltersViaCLI(auditResult)
-    : await consolidateFilters(apiKey!, auditResult)
-  return NextResponse.json(result)
+  try {
+    const result = useLocalClaude
+      ? await consolidateFiltersViaCLI(auditResult)
+      : await consolidateFilters(apiKey!, auditResult)
+    return NextResponse.json(result)
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err.message || "Consolidation failed" },
+      { status: 500 }
+    )
+  }
 }
