@@ -6,23 +6,6 @@ Items marked with [design-review] were surfaced by /plan-design-review on 2026-0
 
 ## MEDIUM — Worth doing
 
-### Claude Code CLI as alternative to Anthropic API key
-**What:** Detect if the `claude` CLI is available and authenticated; offer it as a zero-config option in the KeyEntry step alongside the manual API key flow.
-
-**Why:** This app runs locally. Many users already have Claude Code installed and authenticated (CC Free, Pro, or Max). They shouldn't need a separate Anthropic API key just to run consolidation.
-
-**How:** In `lib/consolidate.ts`, add a `consolidateFiltersViaCLI()` path that calls `claude -p "..."` as a subprocess. In `AuditClient`'s KeyEntry step, auto-detect `claude` CLI availability (e.g., `which claude && claude --version`) and show an "Use local Claude Code" option above the API key input when detected.
-
-**Pros:** Removes the biggest friction point (API key) for users who already pay for Claude. Makes the tool usable day-one for CC users with no additional billing.
-
-**Cons:** Adds a subprocess dependency; `claude -p` output format may change across CC versions; needs graceful fallback to API key if CLI call fails.
-
-**Estimate:** human: ~1 day / CC: ~30 min
-
-**Depends on:** Nothing blocking. Can be a standalone PR.
-
----
-
 ### Unit tests for API route 403 / error paths
 **What:** Add unit tests for `/api/consolidate` (403 → 401 JSON, non-403 re-throw) and `/api/apply` error handling.
 
