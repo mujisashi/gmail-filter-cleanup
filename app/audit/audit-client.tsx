@@ -188,7 +188,7 @@ export function AuditClient({ auditResult }: { auditResult: AuditResult }) {
         )}
 
         {step === "consolidating" && (
-          <Loading message="Analyzing your filters with Claude…" note="This may take 15–30 seconds for large filter sets." />
+          <Loading message="Analyzing your filters with Claude…" note="This may take up to 2 minutes for large filter sets." />
         )}
 
         {step === "review" && consolidationResult && (
