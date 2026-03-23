@@ -83,12 +83,31 @@ export async function consolidateFilters(
   return parseConsolidationResponse(content.text)
 }
 
+function actionFingerprint(action: AuditResult["filters"][number]["action"]): string {
+  return JSON.stringify({
+    addLabelIds: [...(action.addLabelIds ?? [])].sort(),
+    removeLabelIds: [...(action.removeLabelIds ?? [])].sort(),
+    forward: action.forward ?? null,
+  })
+}
+
 export function buildConsolidationPayload(auditResult: AuditResult): string {
   const groupsPayload = Object.fromEntries(
-    Object.entries(auditResult.groupedByAction).map(([type, filters]) => [
-      type,
-      filters.map((f) => ({ id: f.id, criteria: f.criteria, action: f.action })),
-    ])
+    Object.entries(auditResult.groupedByAction)
+      .map(([type, filters]) => {
+        // Group by exact action fingerprint; only keep filters that share an action with 1+ other filter
+        const byAction = new Map<string, typeof filters>()
+        for (const f of filters) {
+          const fp = actionFingerprint(f.action)
+          if (!byAction.has(fp)) byAction.set(fp, [])
+          byAction.get(fp)!.push(f)
+        }
+        const consolidatable = filters.filter(
+          (f) => (byAction.get(actionFingerprint(f.action))?.length ?? 0) >= 2
+        )
+        return [type, consolidatable.map((f) => ({ id: f.id, criteria: f.criteria, action: f.action }))]
+      })
+      .filter(([, filters]) => (filters as unknown[]).length >= 2)
   )
   return JSON.stringify(
     {
@@ -107,12 +126,62 @@ export function buildConsolidationPayload(auditResult: AuditResult): string {
             confidence: "high | medium | low",
           },
         ],
-        unchangedFilterIds: ["ids of filters that do not need consolidation"],
       },
     },
     null,
     2
   )
+}
+
+type FilterEntry = { id: string; criteria: AuditResult["filters"][number]["criteria"]; action: AuditResult["filters"][number]["action"] }
+
+// Build a minimal payload for a single action sub-group (2-4 filters, all with identical actions).
+// Used by consolidateFiltersViaCLI to fan out one CLI call per sub-group.
+export function buildSubGroupPayload(groupType: string, filters: FilterEntry[]): string {
+  return JSON.stringify(
+    {
+      filterGroups: { [groupType]: filters },
+      requiredResponseSchema: {
+        proposals: [
+          {
+            id: "unique string id",
+            groupType: "the action group key from filterGroups",
+            explanation: "human-readable description of what this consolidation does",
+            originalFilterIds: ["ids of filters being replaced"],
+            proposedCriteria: { "...gmail criteria object": "..." },
+            proposedAction: {
+              "...must exactly match the action of the original filters": "...",
+            },
+            confidence: "high | medium | low",
+          },
+        ],
+      },
+    },
+    null,
+    2
+  )
+}
+
+// Compute the list of consolidatable action sub-groups from an audit result.
+// Each entry is one group of filters that share the exact same action fingerprint.
+export function getConsolidatableSubGroups(
+  auditResult: AuditResult
+): Array<{ groupType: string; filters: FilterEntry[] }> {
+  const result: Array<{ groupType: string; filters: FilterEntry[] }> = []
+  for (const [groupType, filters] of Object.entries(auditResult.groupedByAction)) {
+    const byAction = new Map<string, FilterEntry[]>()
+    for (const f of filters) {
+      const fp = actionFingerprint(f.action)
+      if (!byAction.has(fp)) byAction.set(fp, [])
+      byAction.get(fp)!.push({ id: f.id, criteria: f.criteria, action: f.action })
+    }
+    for (const subFilters of byAction.values()) {
+      if (subFilters.length >= 2) {
+        result.push({ groupType, filters: subFilters })
+      }
+    }
+  }
+  return result
 }
 
 export function parseConsolidationResponse(raw: string): ConsolidationResult {
@@ -134,18 +203,14 @@ export function parseConsolidationResponse(raw: string): ConsolidationResult {
   return result.data
 }
 
-export async function consolidateFiltersViaCLI(
-  auditResult: AuditResult
-): Promise<ConsolidationResult> {
-  const userMessage = buildConsolidationPayload(auditResult)
-
+async function runCLISubGroup(payload: string): Promise<ConsolidationResult> {
   let stdout: string
   try {
     stdout = await spawnWithStdin(
       "claude",
       ["-p", "--tools", "", "--system-prompt", SYSTEM_PROMPT, "--output-format", "json"],
-      userMessage,
-      120_000
+      payload,
+      60_000
     )
   } catch (err: any) {
     if (err.code === "ENOENT") {
@@ -165,4 +230,33 @@ export async function consolidateFiltersViaCLI(
   }
 
   return parseConsolidationResponse(responseText)
+}
+
+export async function consolidateFiltersViaCLI(
+  auditResult: AuditResult
+): Promise<ConsolidationResult> {
+  // Fan out one CLI call per action sub-group and run all in parallel.
+  // Each sub-group has 2-4 filters with identical actions — trivial for the model,
+  // completes in <20s each vs >120s for a single combined call.
+  const subGroups = getConsolidatableSubGroups(auditResult)
+
+  if (subGroups.length === 0) {
+    return { proposals: [], unchangedFilterIds: auditResult.filters.map((f) => f.id) }
+  }
+
+  const subGroupResults = await Promise.all(
+    subGroups.map(({ groupType, filters }) =>
+      runCLISubGroup(buildSubGroupPayload(groupType, filters))
+    )
+  )
+
+  // Merge proposals from all sub-groups and compute unchangedFilterIds server-side
+  const allProposals = subGroupResults.flatMap((r) => r.proposals)
+  const proposedIds = new Set(allProposals.flatMap((p) => p.originalFilterIds))
+  const allIds = auditResult.filters.map((f) => f.id)
+
+  return {
+    proposals: allProposals,
+    unchangedFilterIds: allIds.filter((id) => !proposedIds.has(id)),
+  }
 }

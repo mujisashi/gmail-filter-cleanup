@@ -43,7 +43,7 @@ export const ProposalSchema = z.object({
 
 export const ConsolidationResultSchema = z.object({
   proposals: z.array(ProposalSchema),
-  unchangedFilterIds: z.array(z.string()),
+  unchangedFilterIds: z.array(z.string()).optional().default([]),
 })
 
 export const ApplyRequestSchema = z.object({
